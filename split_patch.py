@@ -3,11 +3,10 @@
 import argparse
 import fileinput
 import itertools
-
-from typing import Any, Iterable, Optional
-
 import sys
-from typing import Any
+
+from pathlib import Path
+from typing import Any, Iterable, Optional
 from typing_extensions import Never
 
 
@@ -44,25 +43,30 @@ def run():
         div, mod = divmod(lp, cut)
         div += bool(mod)
         count, step = (div, cut) if args.chunks else (cut, div)
+        print(f"{lp=}, {cut=}, {div=}, {mod=}, {count=}, {step=}")
         return [patches[step * i: step * (i + 1)] for i in range(count)]
 
     if not args.files and sys.stdin.isatty():
         sys.exit("No input")
 
+    directory = Path(args.directory)
+    if not directory.exists():
+        print(f"Creating {directory}/")
+        directory.mkdir(parents=True, exist_ok=True)
+
     all_lines = list(fileinput.input(args.files))
     for file_lines in split(all_lines, "diff"):
-        head, *patches = split(file_lines, "@@")
-        diff, git, a, b = head[0].split()
+        files = join(split(file_lines, "@@"))
+        diff, git, a, b = files[0][0][0].split()
         none, a, filename = a.partition("a/")
         assert not none and diff == 'diff' and git == '--git', head
 
         filename = filename.replace("/", "-")  # TODO: more sanitizing
-        for i, p in enumerate(patches):
-            index = f"-{i}" if len(patches) > 1 else ""
-            fname = f"{filename}{index}.patch"
-            print(fname, file=sys.stderr)
-            with open(fname, "w") as fp:
-                fp.writelines((*head, *p))
+        for i, p in enumerate(files):
+            index = f"-{i + 1}" if len(files) > 1 else ""
+            file = directory / f"{filename}{index}.patch"
+            print(file, file=sys.stderr)
+            file.write_text(''.join(j for i in p for j in i))
 
 
 def _check_patches(all_patches):
