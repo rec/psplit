@@ -5,78 +5,133 @@ import fileinput
 import itertools
 import sys
 
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from typing import Any, Iterable, Optional
-from typing_extensions import Never
+from typing_extensions import Never, TypeAlias
+
+HELP = """
+split_patch.py - split a git diff into multiple parts
+
+TODO:
+
+* git rm
+* git mv, matching
+* git mv, non-matching
+
+"""
+
+Chunk: TypeAlias = list[str]
+FileChunks = list[Chunk]
 
 
 def run():
-    parser = ArgumentParser()
+    args = _parse_args()
+    _check(args)
+    _setup_directory(args.directory, args.clear)
+
+    for file_lines in _split(fileinput.input(args.files), "diff"):
+        split = _split(file_lines, "@@")
+        join = _join(sp, args.parts, args.chunks)
+        _write(join, args.join_character)
+
+    if args.remove:
+        for f in args.files:
+            f.unlink()
+
+
+def _check(args: Namespace) -> None:
+    if args.chunks and args.parts:
+        sys.exit("Only one of --chunks and --parts may be set")
+
+    if args.remove and not args.files:
+        sys.exit("--remove requires some file arguments")
+
+    if sys.stdin.isatty() and not args.files:
+        sys.exit("No input")
+
+
+def _join(patches: FileChunks, parts: int, chunks: int) -> list[FileChunks]:
+    head, patches = patches[:1], patches[1:]
+    cut = chunks or parts or round(len(patches) ** 0.5)
+
+    div, mod = divmod(len(patches), cut)
+    div += bool(mod)
+    count, step = (div, cut) if chunks else (cut, div)
+
+    return [head + patches[step * i: step * (i + 1)] for i in range(count)]
+
+
+def _parse_args() -> Namespace:
+    parser = _ArgumentParser()
 
     help = "A list of files to split (none means split stdin)"
     parser.add_argument("files", nargs="*", help=help)
 
     help = "Split, containing this many deltas"
-    parser.add_argument("-c", "--chunks", default=0, type=int, help=help)
+    parser.add_argument("--chunks", "-c", default=0, type=int, help=help)
 
-    help = "Split into this many parts"
-    parser.add_argument("-p", "--parts", default=0, type=int, help=help)
+    help = "Clean --directory of patch files"
+    parser.add_argument("--clean", action="store_true", help=help)
 
     help = "Output to this directory (create if necessary)"
-    parser.add_argument("-d", "--directory", type=str, default="", help=help)
+    parser.add_argument("--directory", "-d", type=Path, default=Path(), help=help)
 
-    args = parser.parse_args()
-    if args.chunks and args.parts:
-        sys.exit("Only one of --chunks and --parts may be set")
+    help = "The character to replace / in filenames"
+    parser.add_argument("--join-character", "-j", type=str, default="-", help=help)
 
-    def split(it: Iterable[str], prefix: str) -> list[list[str]]:
-        result: list[list[str]] = []
-        for line in it:
-            if not result or (line.startswith(prefix) and result[-1]):
-                result.append([])
-            result[-1].append(line)
-        return result
+    help = "Split into this many parts"
+    parser.add_argument("--parts", "-p", default=0, type=int, help=help)
 
-    def join(patches: list[list[str]]) -> list[list[list[str]]]:
-        lp = len(patches)
-        cut = args.chunks or args.parts or round(lp ** 0.5)
-        div, mod = divmod(lp, cut)
-        div += bool(mod)
-        count, step = (div, cut) if args.chunks else (cut, div)
-        print(f"{lp=}, {cut=}, {div=}, {mod=}, {count=}, {step=}")
-        return [patches[step * i: step * (i + 1)] for i in range(count)]
+    help = "Remove original patch files at the end"
+    parser.add_argument("--remove", action="store_true", help=help)
 
-    if not args.files and sys.stdin.isatty():
-        sys.exit("No input")
+    return parser.parse_args()
 
-    directory = Path(args.directory)
+
+def _split(it: Iterable[str], prefix: str) -> FileChunks:
+    """Split a iteration of lines every time a line starts with `prefix`.
+
+    The result is a list of Chunks, where in each Chunk except perhaps the first
+    one, the first line starts with `prefix`.
+    """
+    result: FileChunks = []
+
+    for line in it:
+        if not result or result[-1] and line.startswith(prefix):
+            result.append([])
+        result[-1].append(line)
+
+    return result
+
+
+def _setup_directory(directory: Pathlib: clear: bool) -> None:
     if not directory.exists():
         print(f"Creating {directory}/")
         directory.mkdir(parents=True, exist_ok=True)
 
-    all_lines = list(fileinput.input(args.files))
-    for file_lines in split(all_lines, "diff"):
-        files = join(split(file_lines, "@@"))
-        diff, git, a, b = files[0][0][0].split()
-        none, a, filename = a.partition("a/")
-        assert not none and diff == 'diff' and git == '--git', head
-
-        filename = filename.replace("/", "-")  # TODO: more sanitizing
-        for i, p in enumerate(files):
-            index = f"-{i + 1}" if len(files) > 1 else ""
-            file = directory / f"{filename}{index}.patch"
-            print(file, file=sys.stderr)
-            file.write_text(''.join(j for i in p for j in i))
+    elif clear:
+        for i in directory.iterdir():
+            if i.suffix == ".patch":
+                i.unlink()
 
 
-def _check_patches(all_patches):
-    for file_patches in all_patches:
-        for i, (head, *patch) in enumerate(file_patches):
-            assert 3 <= len(head) <= 4  # Not sure 3 is possible, but...
-            assert all(i[0].startswith("@@") for i in patch)
+def _write(files: list[FileChunks], join_character: str) -> None:
+    diff, git, a, b = files[0][0][0].split()
+    none, a, filename = a.partition("a/")
+    assert not none and diff == "diff" and git == "--git", head
+
+    for c in "/:~":
+        filename = filename.replace(C, join_character)
+
+    for i, p in enumerate(files):
+        index = f"-{i + 1}" if len(files) > 1 else ""
+        file = directory / f"{filename}{index}.patch"
+        print("Writing", file, file=sys.stderr)
+        file.write_text("".join(j for i in p for j in i))
 
 
-class ArgumentParser(argparse.ArgumentParser):
+class _ArgumentParser(ArgumentParser):
     def __init__(
         self,
         prog: Optional[str] = None,
@@ -96,5 +151,5 @@ class ArgumentParser(argparse.ArgumentParser):
         super().exit(status, message)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run()
