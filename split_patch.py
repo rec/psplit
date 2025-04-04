@@ -1,4 +1,4 @@
-#!/bin/env python3
+M#!/bin/env python3
 
 import argparse
 import fileinput
@@ -6,6 +6,7 @@ import itertools
 import sys
 
 from argparse import ArgumentParser, Namespace
+from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable, Optional
 from typing_extensions import Never, TypeAlias
@@ -15,6 +16,9 @@ split_patch.py - split a git diff into multiple parts
 
 TODO:
 
+* tests!
+
+(Supposedly done)
 * git rm
 * git mv, matching
 * git mv, non-matching
@@ -25,15 +29,14 @@ Chunk: TypeAlias = list[str]
 FileChunks = list[Chunk]
 
 
-def run():
-    args = _parse_args()
+def run(argv=None):
+    args = _parse_args(argv)
     _check(args)
     _setup_directory(args.directory, args.clear)
 
-    for file_lines in _split(fileinput.input(args.files), "diff"):
-        split = _split(file_lines, "@@")
-        join = _join(sp, args.parts, args.chunks)
-        _write(join, args.join_character)
+    lines = fileinput.input(args.files)
+    for file_chunk in _read(lines, args.parts, args.chunks):
+        _write(file_chunk, args.join_character)
 
     if args.remove:
         for f in args.files:
@@ -51,18 +54,29 @@ def _check(args: Namespace) -> None:
         sys.exit("No input")
 
 
-def _join(patches: FileChunks, parts: int, chunks: int) -> list[FileChunks]:
-    head, patches = patches[:1], patches[1:]
-    cut = chunks or parts or round(len(patches) ** 0.5)
+def _chunk(it: Iterable[str], prefix: str) -> FileChunks:
+    """Split a iteration of lines every time a line starts with `prefix`.
 
-    div, mod = divmod(len(patches), cut)
-    div += bool(mod)
-    count, step = (div, cut) if chunks else (cut, div)
+    The result is a list of Chunks, where in each Chunk except perhaps the first
+    one, the first line starts with `prefix`.
+    """
+    result: FileChunks = []
 
-    return [head + patches[step * i: step * (i + 1)] for i in range(count)]
+    for line in it:
+        if not result or result[-1] and line.startswith(prefix):
+            result.append([])
+        result[-1].append(line)
+
+    return result
 
 
-def _parse_args() -> Namespace:
+def _is_splittable(chunks: FileChunks) -> bool:
+    name = chunks[0][0][1].partition(" ")[0]
+    assert name in ("new", "deleted", "index", "similarity")
+    return name == "index"
+
+
+def _parse_args(argv) -> Namespace:
     parser = _ArgumentParser()
 
     help = "A list of files to split (none means split stdin)"
@@ -86,23 +100,13 @@ def _parse_args() -> Namespace:
     help = "Remove original patch files at the end"
     parser.add_argument("--remove", action="store_true", help=help)
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def _split(it: Iterable[str], prefix: str) -> FileChunks:
-    """Split a iteration of lines every time a line starts with `prefix`.
-
-    The result is a list of Chunks, where in each Chunk except perhaps the first
-    one, the first line starts with `prefix`.
-    """
-    result: FileChunks = []
-
-    for line in it:
-        if not result or result[-1] and line.startswith(prefix):
-            result.append([])
-        result[-1].append(line)
-
-    return result
+def _read(lines: Iterable[str], parts: int, chunks: int) -> Iterator[FileChunks]:
+    for file_lines in _chunk(lines, "diff"):
+        split = _chunk(file_lines, "@@")
+        yield _split(sp, parts, chunks)
 
 
 def _setup_directory(directory: Pathlib: clear: bool) -> None:
@@ -114,6 +118,20 @@ def _setup_directory(directory: Pathlib: clear: bool) -> None:
         for i in directory.iterdir():
             if i.suffix == ".patch":
                 i.unlink()
+
+
+def _split(patches: FileChunks, parts: int, chunks: int) -> list[FileChunks]:
+    if not _is_splittable(patches):
+        return [patches]
+
+    head, patches = patches[:1], patches[1:]
+    cut = chunks or parts or round(len(patches) ** 0.5)
+
+    div, mod = divmod(len(patches), cut)
+    div += bool(mod)
+    count, step = (div, cut) if chunks else (cut, div)
+
+    return [head + patches[step * i: step * (i + 1)] for i in range(count)]
 
 
 def _write(files: list[FileChunks], join_character: str) -> None:
