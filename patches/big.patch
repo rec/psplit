@@ -1,0 +1,559 @@
+diff --git a/torch/_inductor/ir.py b/torch/_inductor/ir.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/ir.py
++++ b/torch/_inductor/ir.py
+@@ -2589,12 +2609,12 @@ class BaseView(IRNode):
+         with patch.object(FlexibleLayout, "allow_indexing", True):
+             return extract_read_writes(
+                 self.make_loader(),
+-                self.get_size(),  # type: ignore[arg-type]
++                self.get_size(),
+             ).reads
+
+-    def unwrap_view(self):  # type: ignore[no-untyped-def]
++    def unwrap_view(self) -> IRNode:
+         x: IRNode = self
+-        while isinstance(x, BaseView):
++        while isinstance(x, (BaseView, MutableBox)):
+             x = x.data
+         return x
+
+@@ -2612,13 +2632,13 @@ class BaseView(IRNode):
+
+ @ir_dataclass
+ class ExpandView(BaseView):
+-    size: list[Expr]
++    size: Sequence[Expr]
+
+     @staticmethod
+-    def _normalize_size(x, new_size):  # type: ignore[no-untyped-def]
++    def _normalize_size(x: IRNode, new_size: Sequence[_IntLike]) -> Sequence[_IntLike]:
+         """Replace `-1` with correct sizes"""
+         sizevars = V.graph.sizevars
+-        new_size = list(map(sympy.expand, new_size))
++        new_size = [sympy.expand(s) for s in new_size]
+         old_size = x.get_size()
+         old_size = [None] * (len(new_size) - len(old_size)) + list(old_size)
+         assert len(new_size) == len(old_size)
+@@ -2642,7 +2662,7 @@ class ExpandView(BaseView):
+         return new_size
+
+     @classmethod
+-    def create(cls, x, new_size):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, new_size: Sequence[_IntLike]) -> BaseView:
+         new_size = cls._normalize_size(x, new_size)
+
+         if is_storage_and_layout(x):
+
+@@ -2672,12 +2692,16 @@ class ExpandView(BaseView):
+     def get_size(self) -> Sequence[Expr]:
+         return self.size
+
+-    def make_reindexer(self):  # type: ignore[no-untyped-def]
++    def make_reindexer(
++        self,
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         target = self.get_size()
+         actual = self.data.get_size()
+         skip = len(target) - len(actual)
+
+-        def reindex(index):  # type: ignore[no-untyped-def]
++        def reindex(
++            index: Sequence[Expr],
++        ) -> Sequence[Expr]:
+             index = list(index[skip:])
+             assert len(index) == len(actual)
+             for i in range(len(actual)):
+@@ -2694,7 +2718,7 @@ class PermuteView(BaseView):
+     dims: list[Expr]
+
+     @classmethod
+-    def create(cls, x, dims):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, dims: Sequence[int]) -> BaseView:
+         dims = cls._map_neg_dims(dims)
+         assert OrderedSet(dims) == OrderedSet(range(len(dims)))
+
+@@ -2712,7 +2736,7 @@ class PermuteView(BaseView):
+         return PermuteView(data=x, dims=dims)
+
+     @classmethod
+-    def _map_neg_dims(cls, dims):  # type: ignore[no-untyped-def]
++    def _map_neg_dims(cls, dims: Sequence[int]) -> list[int]:
+         return [dim if dim >= 0 else len(dims) + dim for dim in dims]
+
+     def get_size(self) -> Sequence[Expr]:
+@@ -2722,12 +2746,16 @@ class PermuteView(BaseView):
+         size = self.data.get_size()
+         return [size[i] for i in self.dims]
+
+-    def make_reindexer(self):  # type: ignore[no-untyped-def]
++    def make_reindexer(
++        self,
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         inv = {j: i for i, j in enumerate(self.dims)}
+         inv = [inv[i] for i in range(len(self.dims))]
+         assert OrderedSet(inv) == OrderedSet(range(len(self.dims)))
+
+-        def reindex(index):  # type: ignore[no-untyped-def]
++        def reindex(
++            index: Sequence[Expr],
++        ) -> Sequence[Expr]:
+             return [index[i] for i in inv]
+
+         return reindex
+@@ -2736,13 +2764,13 @@ class PermuteView(BaseView):
+ @ir_dataclass
+ class SqueezeView(BaseView):
+     @classmethod
+-    def create(cls, x, *, dim=None):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, *, dim: Optional[int] = None) -> IRNode:
+         if is_storage_and_layout(x):
+             storage, old_layout = as_storage_and_layout(x)
+             new_size = []
+             new_stride = []
+             if dim is not None:
+-                assert isinstance(dim, int), "expected integer dim argument"
++                assert isinstance(dim, int), type(dim)
+                 assert 0 <= dim and dim < len(old_layout.size)
+
+             for i, (size, stride) in enumerate(zip(old_layout.size, old_layout.stride)):
+@@ -2774,12 +2802,14 @@ class SqueezeView(BaseView):
+             return View.create(x, [s for i, s in enumerate(x.get_size()) if i != dim])
+
+     @staticmethod
+-    def squeezer(size: Sequence[sympy.Expr]):  # type: ignore[no-untyped-def]
++    def squeezer(
++        size: Sequence[Expr],
++    ) -> tuple[list[int], Callable[[Sequence[Expr]], tuple[Expr]]]:
+         new_size = [s for s in size if s != 1]
+         not_one = [i for i, s in enumerate(size) if s != 1]
+         length = len(size)
+
+-        def reindex(index: list[sympy.Expr]) -> tuple[sympy.Expr, ...]:
++        def reindex(index: Sequence[Expr]) -> tuple[Expr]:
+             assert len(index) == len(not_one), f"{index} {not_one}"
+             new_index = [sympy.S.Zero] * length
+             for idx, s in zip(not_one, index):
+@@ -2788,16 +2818,18 @@ class SqueezeView(BaseView):
+
+         return new_size, reindex
+
+-    def __init__(self, data) -> None:  # type: ignore[no-untyped-def]
++    def __init__(self, data: Any) -> None:
+         raise AssertionError("use SqueezeView.create()")
+
+
+ @ir_dataclass
+ class GenericView(BaseView):
+-    size: list[Expr]
+-    reindex: Callable[..., Any]
++    size: Sequence[Expr]
++    reindex: Callable[[Sequence[Expr]], Sequence[Expr]]
+
+-    def make_reindexer(self):  # type: ignore[no-untyped-def]
++    def make_reindexer(
++        self,
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         return self.reindex
+
+     def reindex_str(self) -> str:
+@@ -2815,7 +2847,12 @@ class GenericView(BaseView):
+     __repr__ = __str__
+
+     @classmethod
+-    def create(cls, x, new_size, reindex):  # type: ignore[no-untyped-def]
++    def create(
++        cls,
++        x: IRNode,
++        new_size: Sequence[Expr],
++        reindex: Callable[[Sequence[Expr]], Sequence[Expr]],
++    ) -> BaseView:
+         return cls(data=x, size=list(new_size), reindex=reindex)
+
+     def get_size(self) -> Sequence[Expr]:
+@@ -2825,7 +2862,7 @@ class GenericView(BaseView):
+ @ir_dataclass
+ class View(GenericView):
+     @staticmethod
+-    def handle_negative_index(idx, size):  # type: ignore[no-untyped-def]
++    def handle_negative_index(idx: Expr, size: Expr) -> Expr:
+         idx = sympy.expand(idx)
+         size = sympy.expand(size)
+         evaluate_expr = V.graph.sizevars.shape_env.evaluate_expr
+diff --git a/torch/_inductor/br.py b/torch/_inductor/br.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/br.py
++++ b/torch/_inductor/br.py
+@@ -2834,8 +2871,8 @@ class View(GenericView):
+         return idx
+
+     @classmethod
+-    def create(cls, x, new_size):  # type: ignore[no-untyped-def]
+-        assert isinstance(new_size, (tuple, list))
++    def create(cls, x: IRNode, new_size: Sequence[Expr]) -> IRNode:  # type: ignore[override]
++        assert isinstance(new_size, (tuple, list)), type(new_size)
+         old_size, new_size = cls.resolve_negative_size(x.get_size(), new_size)
+
+         # Skip pointless views
+@@ -2851,7 +2888,7 @@ class View(GenericView):
+
+         if 0 in new_size:
+
+-            def fake_reindex(index):  # type: ignore[no-untyped-def]
++            def fake_reindex(index: Any) -> tuple[int, ...]:
+                 return tuple([0] * len(old_size))
+
+             return cls(data=x, size=list(new_size), reindex=fake_reindex)
+@@ -2881,7 +2918,9 @@ class View(GenericView):
+         return cls(data=x, size=list(new_size), reindex=reindex)
+
+     @staticmethod
+-    def resolve_negative_size(old_size, new_size):  # type: ignore[no-untyped-def]
++    def resolve_negative_size(
++        old_size: Sequence[Expr], new_size: Sequence[Expr]
++    ) -> tuple[Sequence[Expr], Sequence[Expr]]:
+         new_size = [V.graph.sizevars.simplify(x) for x in new_size]
+         old_size = [V.graph.sizevars.simplify(x) for x in old_size]
+
+@@ -2896,7 +2935,9 @@ class View(GenericView):
+         return old_size, new_size
+
+     @classmethod
+-    def dynamic_reshape_indexer(cls, old_size, new_size):  # type: ignore[no-untyped-def]
++    def dynamic_reshape_indexer(
++        cls, old_size: Sequence[Expr], new_size: Sequence[Expr]
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         try:
+             reindex = cls._dynamic_reshape_indexer(old_size, new_size)
+         except (AssertionError, IndexError):
+@@ -2908,7 +2949,9 @@ class View(GenericView):
+         return reindex
+
+     @staticmethod
+-    def _dynamic_reshape_indexer(old_size, new_size):  # type: ignore[no-untyped-def]
++    def _dynamic_reshape_indexer(
++        old_size: Sequence[Expr], new_size: Sequence[Expr]
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         """
+         Perform a reshape entirely by modifying indexing math
+         """
+@@ -2967,7 +3010,9 @@ class View(GenericView):
+         view_expr.reverse()
+         assert len(view_expr) == len(old_size)
+
+-        def reindex(index):  # type: ignore[no-untyped-def]
++        def reindex(
++            index: Sequence[Expr],
++        ) -> Sequence[Expr]:
+             assert len(index) == len(vars), (len(index), len(vars))
+             replacements = dict(zip(vars, index))
+             return tuple(sympy_subs(x, replacements) for x in view_expr)
+@@ -2996,7 +3041,7 @@ class ReinterpretView(BaseView):
+
+     __repr__ = __str__
+
+-    def get_name(self):  # type: ignore[no-untyped-def]
++    def get_name(self) -> str:
+         return self.data.get_name()
+
+     def get_device(self) -> Optional[torch.device]:
+@@ -3006,13 +3051,13 @@ class ReinterpretView(BaseView):
+         return None
+
+     @property
+-    def dtype(self):  # type: ignore[no-untyped-def]
++    def dtype(self) -> torch.dtype:
+         return self.layout.dtype
+
+     def get_size(self) -> Sequence[Expr]:
+         return list(self.layout.size)
+
+-    def get_stride(self):  # type: ignore[no-untyped-def]
++    def get_stride(self) -> Sequence[Expr]:
+         return list(self.layout.stride)
+
+     def make_loader(self) -> Callable[[Sequence[Expr]], OpsValue]:
+@@ -3032,7 +3077,7 @@ class ReinterpretView(BaseView):
+     def get_layout(self) -> Layout:
+         return self.layout
+
+-    def freeze_layout(self):  # type: ignore[no-untyped-def]
++    def freeze_layout(self) -> None:
+         pass
+
+     def get_unbacked_symbol_uses(self) -> OrderedSet[sympy.Symbol]:
+@@ -3066,7 +3111,7 @@ class DtypeView(BaseView):
+     target_dtype: torch.dtype
+
+     @classmethod
+-    def create(cls, x, new_dtype):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, new_dtype: torch.dtype) -> BaseView:
+         if is_storage_and_layout(x):
+             storage, old_layout = as_storage_and_layout(x)
+             new_layout = FixedLayout(
+@@ -3085,7 +3130,7 @@ class DtypeView(BaseView):
+     __repr__ = __str__
+
+     @property
+-    def dtype(self):  # type: ignore[no-untyped-def]
++    def dtype(self) -> torch.dtype:
+         return self.target_dtype
+
+     def get_size(self) -> Sequence[Expr]:
+@@ -3094,7 +3139,7 @@ class DtypeView(BaseView):
+     def make_loader(self) -> Callable[[Sequence[Expr]], OpsValue]:
+         inner = self.data.make_loader()
+
+-        def loader(idx):  # type: ignore[no-untyped-def]
++        def loader(idx: Sequence[Expr]) -> OpsValue:
+             return ops.to_dtype_bitcast(inner(idx), self.target_dtype, self.data.dtype)
+
+         return loader
+@@ -3102,7 +3147,9 @@ class DtypeView(BaseView):
+
+ class SliceView(View):
+     @classmethod
+-    def normalize_start_end(cls, x, dim, start, end):  # type: ignore[no-untyped-def]
++    def normalize_start_end(
++        cls, x: IRNode, dim: int, start: int, end: int
++    ) -> tuple[int, int]:
+         """
+         Normalize start and end such that both are in the range
+         [0, x.get_size()[dim]] and start <= end.
+@@ -3117,7 +3164,7 @@ class SliceView(View):
+             min_func = sizevars.evaluate_min
+             max_func = sizevars.evaluate_max
+
+-        def clamp(x, lower, upper):  # type: ignore[no-untyped-def]
++        def clamp(x: Expr, lower: int, upper: int) -> Expr:
+             clamped_lower = (
+                 x if sizevars.statically_known_geq(x, lower) else max_func(x, lower)
+             )
+@@ -3128,8 +3175,11 @@ class SliceView(View):
+             )
+             return clamped_full
+
+-        def clamp_wrap(val, lower, upper, default):  # type: ignore[no-untyped-def]
++        def clamp_wrap(
++            val: Union[int, None], lower: int, upper: int, default: Union[Expr, int]
++        ) -> Union[Expr, int]:
+             if val is None:
++                # TODO(rec): can this really happen?
+                 return default
+             val = cls.handle_negative_index(val, dim_size)
+             return clamp(val, lower, upper)
+@@ -3139,9 +3189,17 @@ class SliceView(View):
+         return start, end
+
+     @classmethod
+-    def create(cls, x, dim, start, end, step=1, clamp=True):  # type: ignore[no-untyped-def]
++    def create(  # type: ignore[override]
++        cls,
++        x: IRNode,
++        dim: int,
++        start: int,
++        end: int,
++        step: int = 1,
++        clamp: bool = True,
++    ) -> IRNode:
+         step = sympy.expand(step)
+-        assert isinstance(step, sympy.Expr) or step > 0
++        assert isinstance(step, Expr) or step > 0, step
+         try:
+             if start == 0 and end >= 2**63 - 1 and step == 1:
+                 return x
+@@ -3172,7 +3230,9 @@ class SliceView(View):
+             )
+             return ReinterpretView(data=storage, layout=new_layout)
+
+-        def reindex(index):  # type: ignore[no-untyped-def]
++        def reindex(
++            index: Sequence[Expr],
++        ) -> Sequence[Expr]:
+             assert len(index) == len(new_size), f"wrong ndim {index} {new_size}"
+             index = list(index)
+             index[dim] = index[dim] * step + start
+@@ -3267,8 +3327,8 @@ class Layout(OutputSpec):
+         self,
+         device: torch.device,
+         dtype: torch.dtype,
+-        size: list[Expr],
+-        stride: Optional[list[Expr]] = None,
++        size: Sequence[Expr],
++        stride: Optional[Sequence[Expr]] = None,
+         offset: Expr = Integer(0),
+     ) -> None:
+         if stride is None:
+@@ -3277,9 +3337,9 @@ class Layout(OutputSpec):
+         self.dtype = dtype
+         assert len(size) == len(stride), f"size={size}, stride={stride}"
+         assert all(isinstance(s, (Expr, int)) for s in size)
+-        self.size: list[Expr] = size
+-        self.stride: list[Expr] = stride
+-        self.offset: Expr = offset
++        self.size = size
++        self.stride = stride
++        self.offset = offset
+
+     def __str__(self) -> str:
+         offset = ""
+@@ -3324,7 +3384,7 @@ class Layout(OutputSpec):
+                 return False
+         return True
+
+-    def is_stride_ordered(self, order) -> bool:  # type: ignore[no-untyped-def]
++    def is_stride_ordered(self, order: Sequence[int]) -> bool:
+         assert len(self.stride) == len(order)
+
+         # ignore dimensions of size 1, they dont affect layout
+@@ -3335,9 +3395,9 @@ class Layout(OutputSpec):
+         ]
+
+         stride = [self.stride[i] for i in non_1_indices]
+-        order = [order[i] for i in non_1_indices]
++        order: Sequence[int] = [order[i] for i in non_1_indices]
+
+-        def sorted_indices(arr):  # type: ignore[no-untyped-def]
++        def sorted_indices(arr: Sequence[int]) -> Sequence[int]:
+             sorted_arr = sorted(arr)
+             return [sorted_arr.index(element) for element in arr]
+
+@@ -3359,14 +3419,16 @@ class Layout(OutputSpec):
+                 return False
+         return True
+
+-    def is_channels_last_stride_ordered(self):  # type: ignore[no-untyped-def]
++    def is_channels_last_stride_ordered(self) -> bool:
+         # create channels_last order(NCHW, NCDHW, the C is the first order).
+         order = [0] + list(reversed(range(1, len(self.stride) - 1)))
+         order = [len(order)] + order
+         return self.is_stride_ordered(order)
+
+     @staticmethod
+-    def _pad_strides(in_strides, size, dtype):  # type: ignore[no-untyped-def]
++    def _pad_strides(
++        in_strides: Sequence[int], size: Sequence[Expr], dtype: torch.dtype
++    ) -> Sequence[int]:
+         """
+         The padding does not change stride order but makes sure all strides larger
+         than the threshold are multiple of align.
+@@ -3424,15 +3486,15 @@ class Layout(OutputSpec):
+         metrics.num_comprehensive_padding += 1
+         return new_strides
+
+-    def pad_strides(self):  # type: ignore[no-untyped-def]
+-        assert isinstance(self, FlexibleLayout)
++    def pad_strides(self) -> None:
++        assert isinstance(self, FlexibleLayout), type(self)
+         assert self.stride is not None
+         self.stride = self._pad_strides(self.stride, self.size, self.dtype)
+
+-    def should_pad_strides(self):  # type: ignore[no-untyped-def]
++    def should_pad_strides(self) -> bool:
+         return config.comprehensive_padding and isinstance(self, FlexibleLayout)
+
+-    def as_fixed(self):  # type: ignore[no-untyped-def]
++    def as_fixed(self) -> FixedLayout:
+         if isinstance(self, FixedLayout):
+             return self
+
+@@ -3452,16 +3514,17 @@ class Layout(OutputSpec):
+         )
+         return self.as_fixed().make_indexer()
+
+-    def __eq__(self, other) -> bool:  # type: ignore[no-untyped-def]
++    def __eq__(self, other: object) -> bool:
+         return (
+-            self.device == other.device
++            isinstance(other, Layout)
++            and self.device == other.device
+             and self.dtype == other.dtype
+             and self.size == other.size
+             and self.stride == other.stride
+             and self.offset == other.offset
+         )
+
+-    def storage_size(self) -> sympy.Expr:
++    def storage_size(self) -> Expr:
+         return compute_required_storage_length(self.size, self.stride, self.offset)
+
+
+@@ -3470,17 +3533,7 @@ class FixedLayout(Layout):
+
+     def make_indexer(self) -> Callable[[Sequence[Expr]], Expr]:
+         """A closure containing math to read a given element"""
+-
+-        def indexer(index):  # type: ignore[no-untyped-def]
+-            assert len(index) == len(self.stride)
+-            assert len(index) == len(self.size)
+-            result = self.offset
+-            for idx, stride, sz in zip(index, self.stride, self.size):
+-                if sz != 1:
+-                    result = result + idx * stride
+-            return result
+-
+-        return indexer
++        return _fixed_indexer(self.size, self.stride, self.offset)
+
+
+ class FlexibleLayout(Layout):
+@@ -3490,7 +3543,7 @@ class FlexibleLayout(Layout):
+
+     # WARNING!  This doesn't handle zero size tensors correctly
+     @staticmethod
+-    def contiguous_strides(sizes):  # type: ignore[no-untyped-def]
++    def contiguous_strides(sizes: Sequence[int]) -> Sequence[Expr]:
+         if len(sizes) == 0:
+             return []
+         reversed_strides = [sympy.S.One]
+@@ -3499,7 +3552,7 @@ class FlexibleLayout(Layout):
+         return list(reversed(reversed_strides))
+
+     @staticmethod
+-    def fill_ordered(sizes, order):  # type: ignore[no-untyped-def]
++    def fill_ordered(sizes: Sequence[int], order: Sequence[int]) -> Sequence[Expr]:
+         """
+         Create a stride based on the order the dimensions should be filled in.
+
+@@ -3516,7 +3569,7 @@ class FlexibleLayout(Layout):
+         return strides
+
+     @staticmethod
+-    def stride_ordered(sizes, order):  # type: ignore[no-untyped-def]
++    def stride_ordered(sizes: Sequence[int], order: Sequence[int]) -> Sequence[Expr]:
+         """
+         Create a stride based on the sorted order of a permuted range.
+
+@@ -3528,7 +3581,9 @@ class FlexibleLayout(Layout):
+         return FlexibleLayout.fill_ordered(sizes, fill_order)
+
+     @staticmethod
+-    def stride_ordered_for_memory_format(sizes, memory_format):  # type: ignore[no-untyped-def]
++    def stride_ordered_for_memory_format(
++        sizes: Sequence[int], memory_format: torch.memory_format
++    ) -> Sequence[Expr]:
+         """
+         Create a stride based on a memory format.
+
+@@ -3553,7 +3608,9 @@ class FlexibleLayout(Layout):
+             raise NotImplementedError
+
+     @staticmethod
+-    def same_ordered(sizes, stride):  # type: ignore[no-untyped-def]
++    def same_ordered(
++        sizes: Sequence[int], stride: Sequence[_IntLike]
++    ) -> Sequence[Expr]:
+         """
+         Create a stride that has the same stride order as given stride
+
+@@ -3565,7 +3622,9 @@ class FlexibleLayout(Layout):
+         fill_order = sorted(range(len(stride)), key=stride.__getitem__)
+         return FlexibleLayout.fill_ordered(sizes, fill_order)
+
+-    def as_stride_order(self, order, allow_padding=False):  # type: ignore[no-untyped-def]
++    def as_stride_order(
++        self, order: Sequence[int], allow_padding: bool = False
++    ) -> FixedLayout:
+         new_stride = self.stride_ordered(self.size, order)
+         if self.should_pad_strides() and allow_padding:
+             new_stride = self._pad_strides(new_stride, self.size, self.dtype)

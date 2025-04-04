@@ -1,4 +1,4 @@
-M#!/bin/env python3
+#!/bin/env python3
 
 import argparse
 import fileinput
@@ -8,7 +8,7 @@ import sys
 from argparse import ArgumentParser, Namespace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 from typing_extensions import Never, TypeAlias
 
 HELP = """
@@ -54,25 +54,26 @@ def _check(args: Namespace) -> None:
         sys.exit("No input")
 
 
-def _chunk(it: Iterable[str], prefix: str) -> FileChunks:
-    """Split a iteration of lines every time a line starts with `prefix`.
+def _chunk(lines: Iterable[str]) -> list[FileChunks]:
+    def chunk(it: Iterable[str], prefix: str) -> FileChunks:
+        """Split a iteration of lines every time a line starts with `prefix`.
 
-    The result is a list of Chunks, where in each Chunk except perhaps the first
-    one, the first line starts with `prefix`.
-    """
-    result: FileChunks = []
+        The result is a list of Chunks, where in each Chunk except perhaps the first
+        one, the first line starts with `prefix`.
+        """
+        result: FileChunks = []
+        for line in it:
+            if not result or result[-1] and line.startswith(prefix):
+                result.append([])
+            result[-1].append(line)
+        return result
 
-    for line in it:
-        if not result or result[-1] and line.startswith(prefix):
-            result.append([])
-        result[-1].append(line)
-
-    return result
+    return [chunk(fl, "@@") for fl in chunk(lines, "diff")]
 
 
 def _is_splittable(chunks: FileChunks) -> bool:
     name = chunks[0][0][1].partition(" ")[0]
-    assert name in ("new", "deleted", "index", "similarity")
+    assert name in ("new", "deleted", "index", "similarity"), (name, chunks[0][0])
     return name == "index"
 
 
@@ -103,13 +104,11 @@ def _parse_args(argv) -> Namespace:
     return parser.parse_args(argv)
 
 
-def _read(lines: Iterable[str], parts: int, chunks: int) -> Iterator[FileChunks]:
-    for file_lines in _chunk(lines, "diff"):
-        split = _chunk(file_lines, "@@")
-        yield _split(sp, parts, chunks)
+def _read(lines: Iterable[str], parts: int, chunks: int) -> Iterator[list[FileChunks]]:
+    yield from (_split(s, parts, chunks) for s in _chunk(lines))
 
 
-def _setup_directory(directory: Pathlib: clear: bool) -> None:
+def _setup_directory(directory: Path, clear: bool) -> None:
     if not directory.exists():
         print(f"Creating {directory}/")
         directory.mkdir(parents=True, exist_ok=True)
