@@ -1,0 +1,57 @@
+diff --git a/torch/_inductor/ir.py b/torch/_inductor/ir.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/ir.py
++++ b/torch/_inductor/ir.py
+@@ -2694,7 +2718,7 @@ class PermuteView(BaseView):
+     dims: list[Expr]
+
+     @classmethod
+-    def create(cls, x, dims):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, dims: Sequence[int]) -> BaseView:
+         dims = cls._map_neg_dims(dims)
+         assert OrderedSet(dims) == OrderedSet(range(len(dims)))
+
+@@ -2712,7 +2736,7 @@ class PermuteView(BaseView):
+         return PermuteView(data=x, dims=dims)
+
+     @classmethod
+-    def _map_neg_dims(cls, dims):  # type: ignore[no-untyped-def]
++    def _map_neg_dims(cls, dims: Sequence[int]) -> list[int]:
+         return [dim if dim >= 0 else len(dims) + dim for dim in dims]
+
+     def get_size(self) -> Sequence[Expr]:
+@@ -2722,12 +2746,16 @@ class PermuteView(BaseView):
+         size = self.data.get_size()
+         return [size[i] for i in self.dims]
+
+-    def make_reindexer(self):  # type: ignore[no-untyped-def]
++    def make_reindexer(
++        self,
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         inv = {j: i for i, j in enumerate(self.dims)}
+         inv = [inv[i] for i in range(len(self.dims))]
+         assert OrderedSet(inv) == OrderedSet(range(len(self.dims)))
+
+-        def reindex(index):  # type: ignore[no-untyped-def]
++        def reindex(
++            index: Sequence[Expr],
++        ) -> Sequence[Expr]:
+             return [index[i] for i in inv]
+
+         return reindex
+@@ -2736,13 +2764,13 @@ class PermuteView(BaseView):
+ @ir_dataclass
+ class SqueezeView(BaseView):
+     @classmethod
+-    def create(cls, x, *, dim=None):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, *, dim: Optional[int] = None) -> IRNode:
+         if is_storage_and_layout(x):
+             storage, old_layout = as_storage_and_layout(x)
+             new_size = []
+             new_stride = []
+             if dim is not None:
+-                assert isinstance(dim, int), "expected integer dim argument"
++                assert isinstance(dim, int), type(dim)
+                 assert 0 <= dim and dim < len(old_layout.size)
+
+             for i, (size, stride) in enumerate(zip(old_layout.size, old_layout.stride)):

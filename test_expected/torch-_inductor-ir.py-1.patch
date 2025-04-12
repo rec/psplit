@@ -1,0 +1,66 @@
+diff --git a/torch/_inductor/ir.py b/torch/_inductor/ir.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/ir.py
++++ b/torch/_inductor/ir.py
+@@ -2589,12 +2609,12 @@ class BaseView(IRNode):
+         with patch.object(FlexibleLayout, "allow_indexing", True):
+             return extract_read_writes(
+                 self.make_loader(),
+-                self.get_size(),  # type: ignore[arg-type]
++                self.get_size(),
+             ).reads
+
+-    def unwrap_view(self):  # type: ignore[no-untyped-def]
++    def unwrap_view(self) -> IRNode:
+         x: IRNode = self
+-        while isinstance(x, BaseView):
++        while isinstance(x, (BaseView, MutableBox)):
+             x = x.data
+         return x
+
+@@ -2612,13 +2632,13 @@ class BaseView(IRNode):
+
+ @ir_dataclass
+ class ExpandView(BaseView):
+-    size: list[Expr]
++    size: Sequence[Expr]
+
+     @staticmethod
+-    def _normalize_size(x, new_size):  # type: ignore[no-untyped-def]
++    def _normalize_size(x: IRNode, new_size: Sequence[_IntLike]) -> Sequence[_IntLike]:
+         """Replace `-1` with correct sizes"""
+         sizevars = V.graph.sizevars
+-        new_size = list(map(sympy.expand, new_size))
++        new_size = [sympy.expand(s) for s in new_size]
+         old_size = x.get_size()
+         old_size = [None] * (len(new_size) - len(old_size)) + list(old_size)
+         assert len(new_size) == len(old_size)
+@@ -2642,7 +2662,7 @@ class ExpandView(BaseView):
+         return new_size
+
+     @classmethod
+-    def create(cls, x, new_size):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, new_size: Sequence[_IntLike]) -> BaseView:
+         new_size = cls._normalize_size(x, new_size)
+
+         if is_storage_and_layout(x):
+
+@@ -2672,12 +2692,16 @@ class ExpandView(BaseView):
+     def get_size(self) -> Sequence[Expr]:
+         return self.size
+
+-    def make_reindexer(self):  # type: ignore[no-untyped-def]
++    def make_reindexer(
++        self,
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         target = self.get_size()
+         actual = self.data.get_size()
+         skip = len(target) - len(actual)
+
+-        def reindex(index):  # type: ignore[no-untyped-def]
++        def reindex(
++            index: Sequence[Expr],
++        ) -> Sequence[Expr]:
+             index = list(index[skip:])
+             assert len(index) == len(actual)
+             for i in range(len(actual)):

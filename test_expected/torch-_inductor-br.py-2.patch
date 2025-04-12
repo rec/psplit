@@ -1,0 +1,65 @@
+diff --git a/torch/_inductor/br.py b/torch/_inductor/br.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/br.py
++++ b/torch/_inductor/br.py
+@@ -2996,7 +3041,7 @@ class ReinterpretView(BaseView):
+
+     __repr__ = __str__
+
+-    def get_name(self):  # type: ignore[no-untyped-def]
++    def get_name(self) -> str:
+         return self.data.get_name()
+
+     def get_device(self) -> Optional[torch.device]:
+@@ -3006,13 +3051,13 @@ class ReinterpretView(BaseView):
+         return None
+
+     @property
+-    def dtype(self):  # type: ignore[no-untyped-def]
++    def dtype(self) -> torch.dtype:
+         return self.layout.dtype
+
+     def get_size(self) -> Sequence[Expr]:
+         return list(self.layout.size)
+
+-    def get_stride(self):  # type: ignore[no-untyped-def]
++    def get_stride(self) -> Sequence[Expr]:
+         return list(self.layout.stride)
+
+     def make_loader(self) -> Callable[[Sequence[Expr]], OpsValue]:
+@@ -3032,7 +3077,7 @@ class ReinterpretView(BaseView):
+     def get_layout(self) -> Layout:
+         return self.layout
+
+-    def freeze_layout(self):  # type: ignore[no-untyped-def]
++    def freeze_layout(self) -> None:
+         pass
+
+     def get_unbacked_symbol_uses(self) -> OrderedSet[sympy.Symbol]:
+@@ -3066,7 +3111,7 @@ class DtypeView(BaseView):
+     target_dtype: torch.dtype
+
+     @classmethod
+-    def create(cls, x, new_dtype):  # type: ignore[no-untyped-def]
++    def create(cls, x: IRNode, new_dtype: torch.dtype) -> BaseView:
+         if is_storage_and_layout(x):
+             storage, old_layout = as_storage_and_layout(x)
+             new_layout = FixedLayout(
+@@ -3085,7 +3130,7 @@ class DtypeView(BaseView):
+     __repr__ = __str__
+
+     @property
+-    def dtype(self):  # type: ignore[no-untyped-def]
++    def dtype(self) -> torch.dtype:
+         return self.target_dtype
+
+     def get_size(self) -> Sequence[Expr]:
+@@ -3094,7 +3139,7 @@ class DtypeView(BaseView):
+     def make_loader(self) -> Callable[[Sequence[Expr]], OpsValue]:
+         inner = self.data.make_loader()
+
+-        def loader(idx):  # type: ignore[no-untyped-def]
++        def loader(idx: Sequence[Expr]) -> OpsValue:
+             return ops.to_dtype_bitcast(inner(idx), self.target_dtype, self.data.dtype)
+
+         return loader

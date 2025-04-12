@@ -16,17 +16,19 @@ split_patch.py - split a git diff into multiple parts
 
 """
 
+NON_FILE_CHARS = "/:~"
+
 Chunk: TypeAlias = list[str]
 
 
 def run(argv=None):
     args = _parse_args(argv)
     _check(args)
-    _setup_directory(args.directory, args.clear)
+    _setup_directory(args.directory, args.clean)
 
     lines = fileinput.input(args.files)
     for file_deltas in FileDeltas.read(lines, args.parts, args.size):
-        file_deltas.write(args.join_character)
+        file_deltas.write(args.directory, args.join_character)
 
     if args.remove:
         for f in args.files:
@@ -34,7 +36,7 @@ def run(argv=None):
 
 
 def _check(args: Namespace) -> None:
-    if args.chunks and args.size:
+    if args.parts and args.size:
         sys.exit("Only one of --parts and --size may be set")
 
     if args.remove and not args.files:
@@ -42,6 +44,9 @@ def _check(args: Namespace) -> None:
 
     if sys.stdin.isatty() and not args.files:
         sys.exit("No input")
+
+    if args.join_character in NON_FILE_CHARS:
+        sys.exit(f"--join-character had a character from {NON_FILE_CHARS=}")
 
 
 class FileDelta:
@@ -72,8 +77,13 @@ class FileDelta:
         count, step = (div, cut) if size else (cut, div)
 
         pieces = [self.deltas[step * i: step * (i + 1)] for i in range(count)]
-        # print(pieces)
         return FileDeltas([self.head, *p] for p in pieces)
+
+    def write(self, file: Path) -> None:
+        with file.open("w") as fp:
+            fp.writelines(self.head)
+            for d in self.deltas:
+                fp.writelines(d)
 
 
 class FileDeltas(list[FileDelta]):
@@ -101,16 +111,16 @@ class FileDeltas(list[FileDelta]):
     def read(lines: Iterable[str], parts: int, size: int) -> list["FileDeltas"]:
         return [c.split(parts, size) for c in FileDeltas.chunk(lines)]
 
-    def write(self, join_character: str) -> None:
+    def write(self, directory: Path, join_character: str) -> None:
         filename = self[0].filename
-        for c in "/:~":
+        for c in NON_FILE_CHARS:
             filename = filename.replace(c, join_character)
 
-        for i, p in enumerate(self):
+        for i, fd in enumerate(self):
             index = f"-{i + 1}" if len(self) > 1 else ""
             file = directory / f"{filename}{index}.patch"
             print("Writing", file, file=sys.stderr)
-            file.write_text("".join(j for i in p for j in i))
+            fd.write(file)
 
 
 def _parse_args(argv) -> Namespace:
@@ -140,12 +150,12 @@ def _parse_args(argv) -> Namespace:
     return parser.parse_args(argv)
 
 
-def _setup_directory(directory: Path, clear: bool) -> None:
+def _setup_directory(directory: Path, clean: bool) -> None:
     if not directory.exists():
         print(f"Creating {directory}/")
         directory.mkdir(parents=True, exist_ok=True)
 
-    elif clear:
+    elif clean:
         for i in directory.iterdir():
             if i.suffix == ".patch":
                 i.unlink()

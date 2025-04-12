@@ -1,0 +1,67 @@
+diff --git a/torch/_inductor/ir.py b/torch/_inductor/ir.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/ir.py
++++ b/torch/_inductor/ir.py
+@@ -2774,12 +2802,14 @@ class SqueezeView(BaseView):
+             return View.create(x, [s for i, s in enumerate(x.get_size()) if i != dim])
+
+     @staticmethod
+-    def squeezer(size: Sequence[sympy.Expr]):  # type: ignore[no-untyped-def]
++    def squeezer(
++        size: Sequence[Expr],
++    ) -> tuple[list[int], Callable[[Sequence[Expr]], tuple[Expr]]]:
+         new_size = [s for s in size if s != 1]
+         not_one = [i for i, s in enumerate(size) if s != 1]
+         length = len(size)
+
+-        def reindex(index: list[sympy.Expr]) -> tuple[sympy.Expr, ...]:
++        def reindex(index: Sequence[Expr]) -> tuple[Expr]:
+             assert len(index) == len(not_one), f"{index} {not_one}"
+             new_index = [sympy.S.Zero] * length
+             for idx, s in zip(not_one, index):
+@@ -2788,16 +2818,18 @@ class SqueezeView(BaseView):
+
+         return new_size, reindex
+
+-    def __init__(self, data) -> None:  # type: ignore[no-untyped-def]
++    def __init__(self, data: Any) -> None:
+         raise AssertionError("use SqueezeView.create()")
+
+
+ @ir_dataclass
+ class GenericView(BaseView):
+-    size: list[Expr]
+-    reindex: Callable[..., Any]
++    size: Sequence[Expr]
++    reindex: Callable[[Sequence[Expr]], Sequence[Expr]]
+
+-    def make_reindexer(self):  # type: ignore[no-untyped-def]
++    def make_reindexer(
++        self,
++    ) -> Callable[[Sequence[Expr]], Sequence[Expr]]:
+         return self.reindex
+
+     def reindex_str(self) -> str:
+@@ -2815,7 +2847,12 @@ class GenericView(BaseView):
+     __repr__ = __str__
+
+     @classmethod
+-    def create(cls, x, new_size, reindex):  # type: ignore[no-untyped-def]
++    def create(
++        cls,
++        x: IRNode,
++        new_size: Sequence[Expr],
++        reindex: Callable[[Sequence[Expr]], Sequence[Expr]],
++    ) -> BaseView:
+         return cls(data=x, size=list(new_size), reindex=reindex)
+
+     def get_size(self) -> Sequence[Expr]:
+@@ -2825,7 +2862,7 @@ class GenericView(BaseView):
+ @ir_dataclass
+ class View(GenericView):
+     @staticmethod
+-    def handle_negative_index(idx, size):  # type: ignore[no-untyped-def]
++    def handle_negative_index(idx: Expr, size: Expr) -> Expr:
+         idx = sympy.expand(idx)
+         size = sympy.expand(size)
+         evaluate_expr = V.graph.sizevars.shape_env.evaluate_expr

@@ -1,0 +1,72 @@
+diff --git a/torch/_inductor/br.py b/torch/_inductor/br.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/br.py
++++ b/torch/_inductor/br.py
+@@ -3470,17 +3533,7 @@ class FixedLayout(Layout):
+
+     def make_indexer(self) -> Callable[[Sequence[Expr]], Expr]:
+         """A closure containing math to read a given element"""
+-
+-        def indexer(index):  # type: ignore[no-untyped-def]
+-            assert len(index) == len(self.stride)
+-            assert len(index) == len(self.size)
+-            result = self.offset
+-            for idx, stride, sz in zip(index, self.stride, self.size):
+-                if sz != 1:
+-                    result = result + idx * stride
+-            return result
+-
+-        return indexer
++        return _fixed_indexer(self.size, self.stride, self.offset)
+
+
+ class FlexibleLayout(Layout):
+@@ -3490,7 +3543,7 @@ class FlexibleLayout(Layout):
+
+     # WARNING!  This doesn't handle zero size tensors correctly
+     @staticmethod
+-    def contiguous_strides(sizes):  # type: ignore[no-untyped-def]
++    def contiguous_strides(sizes: Sequence[int]) -> Sequence[Expr]:
+         if len(sizes) == 0:
+             return []
+         reversed_strides = [sympy.S.One]
+@@ -3499,7 +3552,7 @@ class FlexibleLayout(Layout):
+         return list(reversed(reversed_strides))
+
+     @staticmethod
+-    def fill_ordered(sizes, order):  # type: ignore[no-untyped-def]
++    def fill_ordered(sizes: Sequence[int], order: Sequence[int]) -> Sequence[Expr]:
+         """
+         Create a stride based on the order the dimensions should be filled in.
+
+@@ -3516,7 +3569,7 @@ class FlexibleLayout(Layout):
+         return strides
+
+     @staticmethod
+-    def stride_ordered(sizes, order):  # type: ignore[no-untyped-def]
++    def stride_ordered(sizes: Sequence[int], order: Sequence[int]) -> Sequence[Expr]:
+         """
+         Create a stride based on the sorted order of a permuted range.
+
+@@ -3528,7 +3581,9 @@ class FlexibleLayout(Layout):
+         return FlexibleLayout.fill_ordered(sizes, fill_order)
+
+     @staticmethod
+-    def stride_ordered_for_memory_format(sizes, memory_format):  # type: ignore[no-untyped-def]
++    def stride_ordered_for_memory_format(
++        sizes: Sequence[int], memory_format: torch.memory_format
++    ) -> Sequence[Expr]:
+         """
+         Create a stride based on a memory format.
+
+@@ -3553,7 +3608,9 @@ class FlexibleLayout(Layout):
+             raise NotImplementedError
+
+     @staticmethod
+-    def same_ordered(sizes, stride):  # type: ignore[no-untyped-def]
++    def same_ordered(
++        sizes: Sequence[int], stride: Sequence[_IntLike]
++    ) -> Sequence[Expr]:
+         """
+         Create a stride that has the same stride order as given stride
+

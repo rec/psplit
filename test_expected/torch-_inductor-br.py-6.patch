@@ -1,0 +1,15 @@
+diff --git a/torch/_inductor/br.py b/torch/_inductor/br.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/br.py
++++ b/torch/_inductor/br.py
+@@ -3565,7 +3622,9 @@ class FlexibleLayout(Layout):
+         fill_order = sorted(range(len(stride)), key=stride.__getitem__)
+         return FlexibleLayout.fill_ordered(sizes, fill_order)
+
+-    def as_stride_order(self, order, allow_padding=False):  # type: ignore[no-untyped-def]
++    def as_stride_order(
++        self, order: Sequence[int], allow_padding: bool = False
++    ) -> FixedLayout:
+         new_stride = self.stride_ordered(self.size, order)
+         if self.should_pad_strides() and allow_padding:
+             new_stride = self._pad_strides(new_stride, self.size, self.dtype)

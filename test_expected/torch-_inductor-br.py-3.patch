@@ -1,0 +1,79 @@
+diff --git a/torch/_inductor/br.py b/torch/_inductor/br.py
+index fbc15c8764f..4cf22e37bdd 100644
+--- a/torch/_inductor/br.py
++++ b/torch/_inductor/br.py
+@@ -3102,7 +3147,9 @@ class DtypeView(BaseView):
+
+ class SliceView(View):
+     @classmethod
+-    def normalize_start_end(cls, x, dim, start, end):  # type: ignore[no-untyped-def]
++    def normalize_start_end(
++        cls, x: IRNode, dim: int, start: int, end: int
++    ) -> tuple[int, int]:
+         """
+         Normalize start and end such that both are in the range
+         [0, x.get_size()[dim]] and start <= end.
+@@ -3117,7 +3164,7 @@ class SliceView(View):
+             min_func = sizevars.evaluate_min
+             max_func = sizevars.evaluate_max
+
+-        def clamp(x, lower, upper):  # type: ignore[no-untyped-def]
++        def clamp(x: Expr, lower: int, upper: int) -> Expr:
+             clamped_lower = (
+                 x if sizevars.statically_known_geq(x, lower) else max_func(x, lower)
+             )
+@@ -3128,8 +3175,11 @@ class SliceView(View):
+             )
+             return clamped_full
+
+-        def clamp_wrap(val, lower, upper, default):  # type: ignore[no-untyped-def]
++        def clamp_wrap(
++            val: Union[int, None], lower: int, upper: int, default: Union[Expr, int]
++        ) -> Union[Expr, int]:
+             if val is None:
++                # TODO(rec): can this really happen?
+                 return default
+             val = cls.handle_negative_index(val, dim_size)
+             return clamp(val, lower, upper)
+@@ -3139,9 +3189,17 @@ class SliceView(View):
+         return start, end
+
+     @classmethod
+-    def create(cls, x, dim, start, end, step=1, clamp=True):  # type: ignore[no-untyped-def]
++    def create(  # type: ignore[override]
++        cls,
++        x: IRNode,
++        dim: int,
++        start: int,
++        end: int,
++        step: int = 1,
++        clamp: bool = True,
++    ) -> IRNode:
+         step = sympy.expand(step)
+-        assert isinstance(step, sympy.Expr) or step > 0
++        assert isinstance(step, Expr) or step > 0, step
+         try:
+             if start == 0 and end >= 2**63 - 1 and step == 1:
+                 return x
+@@ -3172,7 +3230,9 @@ class SliceView(View):
+             )
+             return ReinterpretView(data=storage, layout=new_layout)
+
+-        def reindex(index):  # type: ignore[no-untyped-def]
++        def reindex(
++            index: Sequence[Expr],
++        ) -> Sequence[Expr]:
+             assert len(index) == len(new_size), f"wrong ndim {index} {new_size}"
+             index = list(index)
+             index[dim] = index[dim] * step + start
+@@ -3267,8 +3327,8 @@ class Layout(OutputSpec):
+         self,
+         device: torch.device,
+         dtype: torch.dtype,
+-        size: list[Expr],
+-        stride: Optional[list[Expr]] = None,
++        size: Sequence[Expr],
++        stride: Optional[Sequence[Expr]] = None,
+         offset: Expr = Integer(0),
+     ) -> None:
+         if stride is None:
