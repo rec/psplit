@@ -14,15 +14,6 @@ from typing_extensions import Never, TypeAlias
 HELP = """
 split_patch.py - split a git diff into multiple parts
 
-TODO:
-
-* tests!
-
-(Supposedly done)
-* git rm
-* git mv, matching
-* git mv, non-matching
-
 """
 
 Chunk: TypeAlias = list[str]
@@ -34,7 +25,7 @@ def run(argv=None):
     _setup_directory(args.directory, args.clear)
 
     lines = fileinput.input(args.files)
-    for file_deltas in FileDeltas.read(lines, args.parts, args.chunks):
+    for file_deltas in FileDeltas.read(lines, args.parts, args.size):
         file_deltas.write(args.join_character)
 
     if args.remove:
@@ -43,8 +34,8 @@ def run(argv=None):
 
 
 def _check(args: Namespace) -> None:
-    if args.chunks and args.parts:
-        sys.exit("Only one of --chunks and --parts may be set")
+    if args.chunks and args.size:
+        sys.exit("Only one of --parts and --size may be set")
 
     if args.remove and not args.files:
         sys.exit("--remove requires some file arguments")
@@ -73,12 +64,12 @@ class FileDelta:
         self.is_splittable = command == "index"
         self.head, self.deltas = head, deltas
 
-    def split(self, parts: int, chunks: int) -> "FileDeltas":
-        cut = chunks or parts or round(len(self.deltas) ** 0.5) or 1
+    def split(self, parts: int, size: int) -> "FileDeltas":
+        cut = size or parts or round(len(self.deltas) ** 0.5) or 1
 
         div, mod = divmod(len(self.deltas), cut)
         div += bool(mod)
-        count, step = (div, cut) if chunks else (cut, div)
+        count, step = (div, cut) if size else (cut, div)
 
         pieces = [self.deltas[step * i: step * (i + 1)] for i in range(count)]
         # print(pieces)
@@ -107,8 +98,8 @@ class FileDeltas(list[FileDelta]):
         return FileDeltas(chunk(fl, "@@") for fl in chunk(lines, "diff"))
 
     @staticmethod
-    def read(lines: Iterable[str], parts: int, chunks: int) -> list["FileDeltas"]:
-        return [c.split(parts, chunks) for c in FileDeltas.chunk(lines)]
+    def read(lines: Iterable[str], parts: int, size: int) -> list["FileDeltas"]:
+        return [c.split(parts, size) for c in FileDeltas.chunk(lines)]
 
     def write(self, join_character: str) -> None:
         filename = self[0].filename
@@ -128,9 +119,6 @@ def _parse_args(argv) -> Namespace:
     help = "A list of files to split (none means split stdin)"
     parser.add_argument("files", nargs="*", help=help)
 
-    help = "Split, containing this many deltas"
-    parser.add_argument("--chunks", "-c", default=0, type=int, help=help)
-
     help = "Clean --directory of patch files"
     parser.add_argument("--clean", action="store_true", help=help)
 
@@ -145,6 +133,9 @@ def _parse_args(argv) -> Namespace:
 
     help = "Remove original patch files at the end"
     parser.add_argument("--remove", action="store_true", help=help)
+
+    help = "Split into pieces of this size (measured in delta)"
+    parser.add_argument("--size", "-s", default=0, type=int, help=help)
 
     return parser.parse_args(argv)
 
