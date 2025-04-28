@@ -7,7 +7,7 @@ from unittest import TestCase
 
 import tdir
 
-import split_patch as sp
+import psplit
 
 PARENT = Path(__file__).parent
 PATCH_FILES = PARENT / "patches"
@@ -21,7 +21,7 @@ BIG_PATCH = PATCH_FILES / "big.patch"
 
 class SplitPatchTest(TestCase):
     def test_add(self):
-        (deltas,) = sp.FileDeltas.read(ADD, 0, 0)
+        (deltas,) = psplit.FileDeltas.read(ADD, 0, 0)
         (delta,) = deltas
         self.assertEqual(len(delta.deltas), 1)
         self.assertEqual(
@@ -30,33 +30,33 @@ class SplitPatchTest(TestCase):
         self.assertFalse(delta.is_splittable)
 
     def test_mv(self):
-        (deltas,) = sp.FileDeltas.read(MV, 0, 0)
+        (deltas,) = psplit.FileDeltas.read(MV, 0, 0)
         (delta,) = deltas
         self.assertEqual(len(delta.deltas), 0)
         self.assertFalse(delta.is_splittable)
 
     def test_remove(self):
-        (deltas,) = sp.FileDeltas.read(REMOVE, 0, 0)
+        (deltas,) = psplit.FileDeltas.read(REMOVE, 0, 0)
         (delta,) = deltas
         self.assertEqual(len(delta.deltas), 1)
         self.assertFalse(delta.is_splittable)
 
     def test_edit(self):
-        (deltas,) = sp.FileDeltas.read(EDIT, 0, 0)
+        (deltas,) = psplit.FileDeltas.read(EDIT, 0, 0)
         (delta,) = deltas
         self.assertEqual(len(delta.deltas), 1)
         self.assertTrue(delta.is_splittable)
 
     def test_big(self):
-        deltas = sp.FileDeltas.read(BIG, 0, 0)
+        deltas = psplit.FileDeltas.read(BIG, 0, 0)
         self.assertEqual([len(d) for d in deltas], [3, 6])
 
     def test_big_1(self):
-        deltas = sp.FileDeltas.read(BIG, 1, 0)
+        deltas = psplit.FileDeltas.read(BIG, 1, 0)
         self.assertEqual([len(d) for d in deltas], [1, 1])
 
     def test_big_2(self):
-        deltas = sp.FileDeltas.read(BIG, 0, 1)
+        deltas = psplit.FileDeltas.read(BIG, 0, 1)
         self.assertEqual([len(d) for d in deltas], [12, 31])
 
     @tdir
@@ -64,7 +64,7 @@ class SplitPatchTest(TestCase):
         Path("patches").mkdir()
         with StringIO() as out:
             with contextlib.redirect_stderr(out):
-                sp.run(["-d", "patches", str(BIG_PATCH)])
+                psplit.run(["-d", "patches", str(BIG_PATCH)])
             actual = out.getvalue().splitlines()
             expected = [
                 "Writing patches/torch-_inductor-ir.py-1.patch",

@@ -18,7 +18,7 @@ NON_FILE_CHARS = "/:~"
 Chunk: TypeAlias = list[str]
 
 
-def run(argv=None):
+def main(argv=None):
     args = _parse_args(argv)
     _check(args)
     _setup_directory(args.directory, args.clean)
@@ -179,4 +179,4 @@ class _ArgumentParser(ArgumentParser):
 
 
 if __name__ == "__main__":
-    run()
+    main()

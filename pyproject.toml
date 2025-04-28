@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "split_patch"
+name = "psplit"
 version = "0.1.0"
 description = "✂️ Split git patch files ✂️"
 authors = ["Tom Ritchford <tom@swirly.com>"]
@@ -16,7 +16,7 @@ ruff = "*"
 mypy = "*"
 
 [tool.poetry.scripts]
-split_patch = "split_patch:main"
+psplit = "psplit:main"
 
 [build-system]
 requires = ["poetry-core"]
