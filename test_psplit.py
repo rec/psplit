@@ -21,50 +21,50 @@ BIG_PATCH = PATCH_FILES / "big.patch"
 
 class SplitPatchTest(TestCase):
     def test_add(self):
-        (deltas,) = psplit.FileDeltas.read(ADD, 0, 0)
-        (delta,) = deltas
-        self.assertEqual(len(delta.deltas), 1)
+        (hunks,) = psplit.FileHunks.read(ADD, 0, 0)
+        (hunk,) = hunks
+        self.assertEqual(len(hunk.hunks), 1)
         self.assertEqual(
-            delta.deltas[0], ["@@ -0,0 +1,3 @@\n", "+three\n", "+four\n", "+five\n"]
+            hunk.hunks[0], ["@@ -0,0 +1,3 @@\n", "+three\n", "+four\n", "+five\n"]
         )
-        self.assertFalse(delta.is_splittable)
+        self.assertFalse(hunk.is_splittable)
 
     def test_mv(self):
-        (deltas,) = psplit.FileDeltas.read(MV, 0, 0)
-        (delta,) = deltas
-        self.assertEqual(len(delta.deltas), 0)
-        self.assertFalse(delta.is_splittable)
+        (hunks,) = psplit.FileHunks.read(MV, 0, 0)
+        (hunk,) = hunks
+        self.assertEqual(len(hunk.hunks), 0)
+        self.assertFalse(hunk.is_splittable)
 
     def test_remove(self):
-        (deltas,) = psplit.FileDeltas.read(REMOVE, 0, 0)
-        (delta,) = deltas
-        self.assertEqual(len(delta.deltas), 1)
-        self.assertFalse(delta.is_splittable)
+        (hunks,) = psplit.FileHunks.read(REMOVE, 0, 0)
+        (hunk,) = hunks
+        self.assertEqual(len(hunk.hunks), 1)
+        self.assertFalse(hunk.is_splittable)
 
     def test_edit(self):
-        (deltas,) = psplit.FileDeltas.read(EDIT, 0, 0)
-        (delta,) = deltas
-        self.assertEqual(len(delta.deltas), 1)
-        self.assertTrue(delta.is_splittable)
+        (hunks,) = psplit.FileHunks.read(EDIT, 0, 0)
+        (hunk,) = hunks
+        self.assertEqual(len(hunk.hunks), 1)
+        self.assertTrue(hunk.is_splittable)
 
     def test_big(self):
-        deltas = psplit.FileDeltas.read(BIG, 0, 0)
-        self.assertEqual([len(d) for d in deltas], [3, 6])
+        hunks = psplit.FileHunks.read(BIG, 0, 0)
+        self.assertEqual([len(d) for d in hunks], [3, 6])
 
     def test_big_1(self):
-        deltas = psplit.FileDeltas.read(BIG, 1, 0)
-        self.assertEqual([len(d) for d in deltas], [1, 1])
+        hunks = psplit.FileHunks.read(BIG, 1, 0)
+        self.assertEqual([len(d) for d in hunks], [1, 1])
 
     def test_big_2(self):
-        deltas = psplit.FileDeltas.read(BIG, 0, 1)
-        self.assertEqual([len(d) for d in deltas], [12, 31])
+        hunks = psplit.FileHunks.read(BIG, 0, 1)
+        self.assertEqual([len(d) for d in hunks], [12, 31])
 
     @tdir
     def test_integration(self):
         Path("patches").mkdir()
         with StringIO() as out:
             with contextlib.redirect_stderr(out):
-                psplit.run(["-d", "patches", str(BIG_PATCH)])
+                psplit.main(["-d", "patches", str(BIG_PATCH)])
             actual = out.getvalue().splitlines()
             expected = [
                 "Writing patches/torch-_inductor-ir.py-1.patch",

@@ -1,6 +1,7 @@
 #!/bin/env python3
 
 import fileinput
+import math
 import sys
 
 from argparse import ArgumentParser, Namespace
@@ -8,14 +9,36 @@ from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 from typing_extensions import Never, TypeAlias
 
-HELP = """
-split_patch.py - split a git diff into multiple parts
+HELP = "✂️ `psplit`: Split git patch files ✂️"
 
+EPILOG = """
+`psplit` is a utility to split large git patch files. It is a single file
+with no dependencies except Python 3.9 or greater.
+
+`psplit` splits its inputs by file, then each file is split into one or more
+patches. Each output patch file gets a unique name derived from the
+underlying file name.
+
+To avoid clutter, use the `--directory`/`-d` flag, which creates a
+subdirectory if needed and puts the new patches in it.
+
+If you set `--parts/-p`, `psplit` will split each file into that many parts:
+each file gets the same number of parts.
+
+If you set `--hunks/-u`, `psplit` will split each file into parts containing
+that many hunks: larger files will get more hunks.
+
+(A hunk is a small, self-contained delta for a single text file.  A patch
+contains zero or more files, each file containing one or more hunks.)
+
+If neither flag is set, `psplit` will use the square root of the number of
+hunks in the file, the geometric median between all the hunks in one part
+and one hunk per part.
 """
 
 NON_FILE_CHARS = "/:~"
 
-Chunk: TypeAlias = list[str]
+Hunk: TypeAlias = list[str]
 
 
 def main(argv=None):
@@ -24,20 +47,13 @@ def main(argv=None):
     _setup_directory(args.directory, args.clean)
 
     lines = fileinput.input(args.files)
-    for file_deltas in FileDeltas.read(lines, args.parts, args.size):
-        file_deltas.write(args.directory, args.join_character)
-
-    if args.remove:
-        for f in args.files:
-            f.unlink()
+    for file_hunks in FileHunks.read(lines, args.parts, args.hunks):
+        file_hunks.write(args.directory, args.join_character)
 
 
 def _check(args: Namespace) -> None:
-    if args.parts and args.size:
-        sys.exit("Only one of --parts and --size may be set")
-
-    if args.remove and not args.files:
-        sys.exit("--remove requires some file arguments")
+    if args.parts and args.hunks:
+        sys.exit("Only one of --parts and --hunks may be set")
 
     if sys.stdin.isatty() and not args.files:
         sys.exit("No input")
@@ -46,53 +62,55 @@ def _check(args: Namespace) -> None:
         sys.exit(f"--join-character had a character from {NON_FILE_CHARS=}")
 
 
-class FileDelta:
-    def __init__(self, head: Chunk, *deltas: Chunk) -> None:
-        assert all(deltas)
-        assert all(isinstance(i, list) for i in deltas)
+class FileHunk:
+    def __init__(self, head: Hunk, *hunks: Hunk) -> None:
+        assert all(hunks), hunks
+        assert all(isinstance(i, list) for i in hunks), hunks
         assert len(head) in (4, 5), head
         diff, command, *_ = head
         diff, git, a, b = diff.split()
         assert diff == "diff" and git == "--git", head
 
         command = command.split()[0]
-        assert command in ("new", "deleted", "index", "similarity")
+        assert command in ("new", "deleted", "index", "similarity"), (command, hunks)
 
         none, _a, self.filename = a.partition("a/")
         none_b, _b, filename_b = b.partition("b/")
-        assert _a and _b and not none and not none_b and self.filename and filename_b
-        assert (not deltas) == (command == "similarity")
+        assert _a and _b and not none and not none_b and self.filename and filename_b, (
+            head, hunks
+        )
+        assert (not hunks) == (command == "similarity"), (command, hunks)
 
         self.is_splittable = command == "index"
-        self.head, self.deltas = head, deltas
+        self.head, self.hunks = head, hunks
 
-    def split(self, parts: int, size: int) -> "FileDeltas":
-        cut = size or parts or round(len(self.deltas) ** 0.5) or 1
+    def split(self, parts: int, hunks: int) -> "FileHunks":
+        cut = hunks or parts or round(math.sqrt(len(self.hunks))) or 1
 
-        div, mod = divmod(len(self.deltas), cut)
+        div, mod = divmod(len(self.hunks), cut)
         div += bool(mod)
-        count, step = (div, cut) if size else (cut, div)
+        count, step = (div, cut) if hunks else (cut, div)
 
-        pieces = [self.deltas[step * i : step * (i + 1)] for i in range(count)]
-        return FileDeltas([self.head, *p] for p in pieces)
+        pieces = [self.hunks[step * i : step * (i + 1)] for i in range(count)]
+        return FileHunks([self.head, *p] for p in pieces)
 
     def write(self, file: Path) -> None:
         with file.open("w") as fp:
             fp.writelines(self.head)
-            for d in self.deltas:
+            for d in self.hunks:
                 fp.writelines(d)
 
 
-class FileDeltas(list[FileDelta]):
-    def __init__(self, chunks: Iterable[Sequence[Chunk]]) -> None:
-        return super().__init__(FileDelta(*c) for c in chunks)
+class FileHunks(list[FileHunk]):
+    def __init__(self, hunks: Iterable[Sequence[Hunk]]) -> None:
+        return super().__init__(FileHunk(*c) for c in hunks)
 
     @staticmethod
-    def chunk(lines: Iterable[str]) -> "FileDeltas":
-        def chunk(it: Iterable[str], prefix: str) -> list[list[str]]:
+    def hunk(lines: Iterable[str]) -> "FileHunks":
+        def hunk(it: Iterable[str], prefix: str) -> list[list[str]]:
             """Split a iteration of lines every time a line starts with `prefix`.
 
-            The result is a list of Chunks, where in each Chunk except perhaps the first
+            The result is a list of Hunks, where in each Hunk except perhaps the first
             one, the first line starts with `prefix`.
             """
             result: list[list[str]] = []
@@ -102,11 +120,11 @@ class FileDeltas(list[FileDelta]):
                 result[-1].append(line)
             return result
 
-        return FileDeltas(chunk(fl, "@@") for fl in chunk(lines, "diff"))
+        return FileHunks(hunk(fl, "@@") for fl in hunk(lines, "diff"))
 
     @staticmethod
-    def read(lines: Iterable[str], parts: int, size: int) -> list["FileDeltas"]:
-        return [c.split(parts, size) for c in FileDeltas.chunk(lines)]
+    def read(lines: Iterable[str], parts: int, hunks: int) -> list["FileHunks"]:
+        return [c.split(parts, hunks) for c in FileHunks.hunk(lines)]
 
     def write(self, directory: Path, join_character: str) -> None:
         filename = self[0].filename
@@ -123,26 +141,23 @@ class FileDeltas(list[FileDelta]):
 def _parse_args(argv) -> Namespace:
     parser = _ArgumentParser()
 
-    help = "A list of files to split (none means split stdin)"
+    help = "Files to split (or split stdin if no files)"
     parser.add_argument("files", nargs="*", help=help)
 
     help = "Clean --directory of patch files"
     parser.add_argument("--clean", action="store_true", help=help)
 
-    help = "Output to this directory (create if necessary)"
+    help = "Output to this directory (create if needed)"
     parser.add_argument("--directory", "-d", type=Path, default=Path(), help=help)
+
+    help = "Split into parts containing this many hunks"
+    parser.add_argument("--hunks", "-u", default=0, type=int, help=help)
 
     help = "The character to replace / in filenames"
     parser.add_argument("--join-character", "-j", type=str, default="-", help=help)
 
     help = "Split into this many parts"
     parser.add_argument("--parts", "-p", default=0, type=int, help=help)
-
-    help = "Remove original patch files at the end"
-    parser.add_argument("--remove", action="store_true", help=help)
-
-    help = "Split into pieces of this size (measured in delta)"
-    parser.add_argument("--size", "-s", default=0, type=int, help=help)
 
     return parser.parse_args(argv)
 
@@ -163,8 +178,8 @@ class _ArgumentParser(ArgumentParser):
         self,
         prog: Optional[str] = None,
         usage: Optional[str] = None,
-        description: Optional[str] = None,
-        epilog: Optional[str] = None,
+        description: Optional[str] = HELP,
+        epilog: Optional[str] = EPILOG,
         is_fixer: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -173,7 +188,7 @@ class _ArgumentParser(ArgumentParser):
 
     def exit(self, status: int = 0, message: Optional[str] = None) -> Never:
         argv = sys.argv[1:]
-        if self._epilog and not status and "-h" in argv or "--help" in argv:
+        if self._epilog and not status and ("-h" in argv or "--help" in argv):
             print(self._epilog)
         super().exit(status, message)
 
