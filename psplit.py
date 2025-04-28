@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 
 import fileinput
 import math
@@ -144,16 +144,13 @@ def _parse_args(argv) -> Namespace:
     help = "Files to split (or split stdin if no files)"
     parser.add_argument("files", nargs="*", help=help)
 
-    help = "Clean --directory of patch files"
-    parser.add_argument("--clean", action="store_true", help=help)
-
     help = "Output to this directory (create if needed)"
     parser.add_argument("--directory", "-d", type=Path, default=Path(), help=help)
 
     help = "Split into parts containing this many hunks"
     parser.add_argument("--hunks", "-u", default=0, type=int, help=help)
 
-    help = "The character to replace / in filenames"
+    help = f"The character replacing '{NON_FILE_CHARS}' in patch filenames"
     parser.add_argument("--join-character", "-j", type=str, default="-", help=help)
 
     help = "Split into this many parts"
