@@ -1,14 +1,11 @@
 #!/bin/env python3
 
-import argparse
 import fileinput
-import itertools
 import sys
 
 from argparse import ArgumentParser, Namespace
-from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Iterator, NamedTuple, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
 from typing_extensions import Never, TypeAlias
 
 HELP = """
@@ -64,7 +61,7 @@ class FileDelta:
         none, _a, self.filename = a.partition("a/")
         none_b, _b, filename_b = b.partition("b/")
         assert _a and _b and not none and not none_b and self.filename and filename_b
-        assert (not deltas) == (command == 'similarity')
+        assert (not deltas) == (command == "similarity")
 
         self.is_splittable = command == "index"
         self.head, self.deltas = head, deltas
@@ -76,7 +73,7 @@ class FileDelta:
         div += bool(mod)
         count, step = (div, cut) if size else (cut, div)
 
-        pieces = [self.deltas[step * i: step * (i + 1)] for i in range(count)]
+        pieces = [self.deltas[step * i : step * (i + 1)] for i in range(count)]
         return FileDeltas([self.head, *p] for p in pieces)
 
     def write(self, file: Path) -> None:
