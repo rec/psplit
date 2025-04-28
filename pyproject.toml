@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "split_patch"
+version = "0.1.0"
+description = "✂️ Split git patch files ✂️"
+authors = ["Tom Ritchford <tom@swirly.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+tdir = "*"
+ruff = "*"
+mypy = "*"
+
+[tool.poetry.scripts]
+split_patch = "split_patch:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
