@@ -26,7 +26,7 @@ If you set `--parts/-p`, `psplit` will split each file into that many parts:
 each file gets the same number of parts.
 
 If you set `--hunks/-u`, `psplit` will split each file into parts containing
-that many hunks: larger files will get more hunks.
+that many hunks: larger files will get more parts.
 
 (A hunk is a small, self-contained delta for a single text file.  A patch
 contains zero or more files, each file containing one or more hunks.)
