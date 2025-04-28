@@ -57,15 +57,39 @@ If neither flag is set, `psplit` will use the square root of the number of
 hunks in the file, the geometric median between all the hunks in one part
 and one hunk per part.
 
+## Example
+
+```
+$ g diff HEAD~ | psplit -d patches
+Creating patches/
+Writing patches/tools-linter-adapters-_linter.py.patch
+Writing patches/tools-linter-adapters-_linter-__init__.py.patch
+Writing patches/tools-linter-adapters-_linter-argument_parser.py.patch
+Writing patches/tools-linter-adapters-_linter-block.py.patch
+Writing patches/tools-linter-adapters-_linter-blocks.py.patch
+Writing patches/tools-linter-adapters-_linter-bracket_pairs.py.patch
+Writing patches/tools-linter-adapters-_linter-file_linter.py.patch
+Writing patches/tools-linter-adapters-_linter-file_summary.py.patch
+Writing patches/tools-linter-adapters-_linter-messages.py.patch
+Writing patches/tools-linter-adapters-_linter-python_file.py.patch
+Writing patches/tools-linter-adapters-_linter-sets.py.patch
+Writing patches/tools-linter-adapters-docstring_linter.py-1.patch
+Writing patches/tools-linter-adapters-docstring_linter.py-2.patch
+Writing patches/tools-linter-adapters-docstring_linter.py-3.patch
+Writing patches/tools-linter-adapters-set_linter.py-1.patch
+Writing patches/tools-linter-adapters-set_linter.py-2.patch
+Writing patches/tools-test-test_docstring_linter.py.patch
+```
+
 ## How to install
 
-Either use Pip: `python -m pip install psplit`. Or simply download the file
+Either use `pip`: `python -m pip install psplit`. Or simply download the file
 `psplit.py` and put it into your path.
 
 
 ## Other alternatives
 
 https://manpages.ubuntu.com/manpages/xenial/man1/splitpatch.1.html didn't work
-well for large files
+well for large files and isn't available on Mac OS
 
 https://pypi.org/project/splitpatch/ is complicated and very new
