@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "psplit"
-version = "1.0.2"
+version = "1.0.3"
 description = "✂️ Split git patch files ✂️"
 authors = ["Tom Ritchford <tom@swirly.com>"]
 license = "MIT"
