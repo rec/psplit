@@ -77,7 +77,8 @@ class FileHunk:
         none, _a, self.filename = a.partition("a/")
         none_b, _b, filename_b = b.partition("b/")
         assert _a and _b and not none and not none_b and self.filename and filename_b, (
-            head, hunks
+            head,
+            hunks,
         )
         assert (not hunks) == (command == "similarity"), (command, hunks)
 
@@ -143,6 +144,9 @@ def _parse_args(argv) -> Namespace:
 
     help = "Files to split (or split stdin if no files)"
     parser.add_argument("files", nargs="*", help=help)
+
+    help = "Clean --directory of patch files"
+    parser.add_argument("--clean", action="store_true", help=help)
 
     help = "Output to this directory (create if needed)"
     parser.add_argument("--directory", "-d", type=Path, default=Path(), help=help)
