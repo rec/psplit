@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 
 import fileinput
+import functools
 import math
+import subprocess
 import sys
 
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence, TextIO
 from typing_extensions import Never, TypeAlias
 
+run = functools.partial(
+    subprocess.run, text=True, capture_output=True, check=True
+)
 HELP = "✂️ `psplit`: Split git patch files ✂️"
 
 EPILOG = """
@@ -37,6 +42,7 @@ and one hunk per part.
 """
 
 NON_FILE_CHARS = "/:~"
+COMMIT_PATTERN = "{filename}-{index}"
 
 Hunk: TypeAlias = list[str]
 
@@ -48,7 +54,10 @@ def main(argv=None):
 
     lines = fileinput.input(args.files)
     for file_hunks in FileHunks.read(lines, args.parts, args.hunks):
-        file_hunks.write(args.directory, args.join_character)
+        if args.git:
+            file_hunks.git(args.git_pattern)
+        else:
+            file_hunks.write(args.directory, args.join_character)
 
 
 def _check(args: Namespace) -> None:
@@ -96,9 +105,19 @@ class FileHunk:
 
     def write(self, file: Path) -> None:
         with file.open("w") as fp:
-            fp.writelines(self.head)
-            for d in self.hunks:
-                fp.writelines(d)
+            self._write(fp)
+
+    def _write(self, fp: TextIO) -> None:
+        fp.writelines(self.head)
+        for d in self.hunks:
+            fp.writelines(d)
+
+    def git(self, index: int, pattern: str) -> None:
+        with tempfile.NamedTemporaryFile(delete_on_close=False) as fp:
+            self._write(fp)
+            fp.close()
+            run(("git", "apply", fp.name))
+            run(("git", "commit", pattern.format(filename=self.filename, index=index)))
 
 
 class FileHunks(list[FileHunk]):
@@ -131,11 +150,15 @@ class FileHunks(list[FileHunk]):
         for c in NON_FILE_CHARS:
             filename = filename.replace(c, join_character)
 
-        for i, fd in enumerate(self):
+        for i, file_hunk in enumerate(self):
             index = f"-{i + 1}" if len(self) > 1 else ""
             file = directory / f"{filename}{index}.patch"
-            print("Writing", file, file=sys.stderr)
-            fd.write(file)
+            print(file, file=sys.stderr)
+            file_hunk.write(file)
+
+    def git(self, git_pattern: str) -> None:
+        for index, file_hunk in enumerate(self):
+            file_hunk.git(index, git_pattern)
 
 
 def _parse_args(argv) -> Namespace:
@@ -146,6 +169,14 @@ def _parse_args(argv) -> Namespace:
 
     help = "Output to this directory (create if needed)"
     parser.add_argument("--directory", "-d", type=Path, default=Path(), help=help)
+
+    help = "Create git commits instead of diffs"
+    parser.add_argument("--git", "-g", action="store_true", help=help)
+
+    help = "Patterns for commit names"
+    parser.add_argument(
+        "--git-pattern", "-p", default=COMMIT_PATTERN, action="store_true", help=help
+    )
 
     help = "Split into parts containing this many hunks"
     parser.add_argument("--hunks", "-u", default=0, type=int, help=help)
