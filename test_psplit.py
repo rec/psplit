@@ -10,13 +10,13 @@ import tdir
 import psplit
 
 PARENT = Path(__file__).parent
-PATCH_FILES = PARENT / "patches"
+PATCH_FILES = PARENT / 'patches'
 assert PATCH_FILES.exists()
-EXPECTED = PARENT / "test_expected"
-PATCHES = sorted(PATCH_FILES.glob("*.patch"))
+EXPECTED = PARENT / 'test_expected'
+PATCHES = sorted(PATCH_FILES.glob('*.patch'))
 CONTENTS = {p: p.read_text().splitlines(keepends=True) for p in PATCHES}
 ADD, BIG, EDIT, MV, REMOVE = CONTENTS.values()
-BIG_PATCH = PATCH_FILES / "big.patch"
+BIG_PATCH = PATCH_FILES / 'big.patch'
 
 
 class SplitPatchTest(TestCase):
@@ -25,7 +25,7 @@ class SplitPatchTest(TestCase):
         (hunk,) = hunks
         self.assertEqual(len(hunk.hunks), 1)
         self.assertEqual(
-            hunk.hunks[0], ["@@ -0,0 +1,3 @@\n", "+three\n", "+four\n", "+five\n"]
+            hunk.hunks[0], ['@@ -0,0 +1,3 @@\n', '+three\n', '+four\n', '+five\n']
         )
         self.assertFalse(hunk.is_splittable)
 
@@ -61,30 +61,30 @@ class SplitPatchTest(TestCase):
 
     @tdir
     def test_integration(self):
-        Path("patches").mkdir()
+        Path('patches').mkdir()
         with StringIO() as out:
             with contextlib.redirect_stderr(out):
-                psplit.main(["-d", "patches", str(BIG_PATCH)])
+                psplit.main(['-d', 'patches', str(BIG_PATCH)])
             actual = out.getvalue().splitlines()
             expected = [
-                "Writing patches/torch-_inductor-ir.py-1.patch",
-                "Writing patches/torch-_inductor-ir.py-2.patch",
-                "Writing patches/torch-_inductor-ir.py-3.patch",
-                "Writing patches/torch-_inductor-br.py-1.patch",
-                "Writing patches/torch-_inductor-br.py-2.patch",
-                "Writing patches/torch-_inductor-br.py-3.patch",
-                "Writing patches/torch-_inductor-br.py-4.patch",
-                "Writing patches/torch-_inductor-br.py-5.patch",
-                "Writing patches/torch-_inductor-br.py-6.patch",
+                'Writing patches/torch-_inductor-ir.py-1.patch',
+                'Writing patches/torch-_inductor-ir.py-2.patch',
+                'Writing patches/torch-_inductor-ir.py-3.patch',
+                'Writing patches/torch-_inductor-br.py-1.patch',
+                'Writing patches/torch-_inductor-br.py-2.patch',
+                'Writing patches/torch-_inductor-br.py-3.patch',
+                'Writing patches/torch-_inductor-br.py-4.patch',
+                'Writing patches/torch-_inductor-br.py-5.patch',
+                'Writing patches/torch-_inductor-br.py-6.patch',
             ]
             self.assertEqual(actual, expected)
 
         if EXPECTED.exists():
-            c = filecmp.dircmp(EXPECTED, "patches")
+            c = filecmp.dircmp(EXPECTED, 'patches')
             if c.left_only or c.right_only or c.diff_files:
                 c.report()
                 self.assertEqual(
                     (c.left_only, c.right_only, c.diff_files), ([], [], [])
                 )
         else:
-            shutil.copytree("patches", str(EXPECTED))
+            shutil.copytree('patches', str(EXPECTED))
