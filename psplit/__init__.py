@@ -3,11 +3,12 @@
 import fileinput
 import math
 import sys
-
 from argparse import ArgumentParser, Namespace
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence
-from typing_extensions import Never, TypeAlias
+from typing import Any, TypeAlias
+
+from typing_extensions import Never
 
 HELP = '✂️ `psplit`: Split git patch files ✂️'
 
@@ -177,17 +178,17 @@ def _setup_directory(directory: Path, clean: bool) -> None:
 class _ArgumentParser(ArgumentParser):
     def __init__(
         self,
-        prog: Optional[str] = None,
-        usage: Optional[str] = None,
-        description: Optional[str] = HELP,
-        epilog: Optional[str] = EPILOG,
+        prog: str | None = None,
+        usage: str | None = None,
+        description: str | None = HELP,
+        epilog: str | None = EPILOG,
         is_fixer: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(prog, usage, description, None, **kwargs)
         self._epilog = epilog
 
-    def exit(self, status: int = 0, message: Optional[str] = None) -> Never:
+    def exit(self, status: int = 0, message: str | None = None) -> Never:
         argv = sys.argv[1:]
         if self._epilog and not status and ('-h' in argv or '--help' in argv):
             print(self._epilog)

@@ -9,7 +9,7 @@ import tdir
 
 import psplit
 
-PARENT = Path(__file__).parent
+PARENT = Path(__file__).parent.parent
 PATCH_FILES = PARENT / 'patches'
 assert PATCH_FILES.exists()
 EXPECTED = PARENT / 'test_expected'
